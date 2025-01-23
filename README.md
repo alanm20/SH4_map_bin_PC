@@ -2,7 +2,7 @@
  
 # Authors:
 
- Orignal Noesis map loader script from:
+ Original Noesis map loader script from:
  
  Laurynas Zubavičius (Sparagas)
  
