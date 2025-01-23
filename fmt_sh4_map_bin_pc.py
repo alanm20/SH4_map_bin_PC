@@ -163,7 +163,7 @@ def LoadModel(data, mdlList):
     return 1
 
 def LoadMesh(bs,texList,matList, gb_start):
-    #result = [(i) for i in findall(b'\x00\x30\x12\x04\x00\x00', data)]
+    
     chunk_start = bs.tell()
     bs.readUInt()  # magic,magic2
     mesh_cnt = bs.readUInt()
@@ -234,9 +234,3 @@ def LoadMesh(bs,texList,matList, gb_start):
                         rapi.rpgSetName('mesh{}'.format(j+3))
                         rapi.rpgCommitTriangles(fbuf[:(3+j)*2], noesis.RPGEODATA_USHORT, 3+j, noesis.RPGEO_TRIANGLE_STRIP)
                 rapi.rpgClearBufferBinds() 
-
-def findall(p, s):
-    i = s.find(p)
-    while i != -1:
-        yield i
-        i = s.find(p, i + 1)
