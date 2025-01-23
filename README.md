@@ -3,11 +3,15 @@
 # Authors:
 
  Orignal Noesis map loader script from:
+ 
  Laurynas Zubavičius (Sparagas)
+ 
  Rodolfo Nuñez (roocker666)
+ 
  https://github.com/Sparagas/Silent-Hill
 
  Alanm1 - Texture loader 
+ 
      Requires the global ??gb.bin from the same area of map to get the global texture. 
 
  Search idea:
