@@ -27,6 +27,8 @@
 Does not support some SH4 PC map bin files.
     
 Some mesh faces show up flipped. turn off Noesis backface culling to see all faces
-    
+
+Texture transparency issues
+
 Surface that has shadow texture overlay does not blend with the background. Don;t know how to fix it.
          
