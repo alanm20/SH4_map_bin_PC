@@ -1,9 +1,9 @@
 #
-# SH4 PC/Win bin file map loader
+# Noesis : SH4 PC/Win bin map file viewer plugin
 # 
 #  Authors:
 #
-# Orignal Noesis map loader script from:
+# Original Noesis map loader script from:
 # Laurynas Zubavičius (Sparagas)
 # Rodolfo Nuñez (roocker666)
 # https://github.com/Sparagas/Silent-Hill
@@ -81,7 +81,7 @@ def LoadTexture(data, texList, tex_no = 0):
                 format = (bs.read(4)).decode('utf-8')
                 mip_cnt = bs.readUInt()
                 pitch = bs.readUInt()
-                #print(ddsWidth,ddsHeight,format,mip_cnt,pitch)
+                print(ddsWidth,ddsHeight,format,mip_cnt,pitch)
                 bs.seek(0x1c,NOESEEK_REL)
                 imgDataOffs = struct.unpack("I"*mip_cnt, bs.read(mip_cnt*4))
                 unknown = bs.readUInt()
@@ -98,8 +98,11 @@ def LoadTexture(data, texList, tex_no = 0):
                     dxt =  noesis.NOESISTEX_DXT3
                 elif format == 'DXT5':
                     dxt =  noesis.NOESISTEX_DXT5
-
-                texList.append(NoeTexture(texName, ddsWidth, ddsHeight, ddsData, dxt))
+                else:
+                    print ("unsupport DXT format!!!")    
+                ddsData = rapi.imageDecodeDXT(ddsData, ddsWidth, ddsHeight,dxt)
+                ddsFmt = noesis.NOESISTEX_RGBA32
+                texList.append(NoeTexture(texName, ddsWidth, ddsHeight, ddsData, ddsFmt))
                 bs.seek(pos) 
     return 1
 
@@ -135,8 +138,11 @@ def LoadModel(data, mdlList):
             tex_id += gb_start
         texName = "Tex_"+str(tex_id)
         matName = "Mat_" + str( i)
-        matList.append(NoeMaterial(matName,texName)) # create unique material for each mesh
+        mat=NoeMaterial(matName,texName)
+        mat.setBlendMode(1,6)
+        matList.append(mat) # create unique material for each mesh
         rapi.rpgSetMaterial(matName)
+
 
         bs.seek(x+34)
         material_id= bs.readUInt()
