@@ -10,7 +10,7 @@
  
  https://github.com/Sparagas/Silent-Hill
 
- Texture loader : Alan1 
+ Texture loader : Alanm1 
  
      Requires the global ??gb.bin from the same area of map to get the global texture. 
 
