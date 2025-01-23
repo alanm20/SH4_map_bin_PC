@@ -57,53 +57,65 @@ def LoadTexture(data, texList, tex_no = 0):
         bs.seek(offs[i])
         magic=bs.readUShort()
         magic2=bs.readUShort()
+        
         if magic == magic2:  # texture chunk  , num tex == num palette
             bs.seek(0xc,NOESEEK_REL)
             total_tex = magic + magic2
-            n_tex = magic
-            bs.seek(total_tex * 0x4 + n_tex*0x10,NOESEEK_REL)
-            mat_attr=[]
+            n_tex_grp = magic
+            bs.seek(total_tex * 0x4 + n_tex_grp*0x10,NOESEEK_REL)
+            image_cnt=[]
             tex_offs=[]
+            
             offs_base = bs.tell()
-            for t in range(n_tex): # texture header offsets
+            for t in range(n_tex_grp): # texture header offsets
                 entry_start = bs.tell()
                 bs.readUInt()
-                mat_attr.append(bs.readUInt())
+                image_cnt.append(bs.readUInt())
                 bs.readUInt()
                 tex_offs.append((bs.readUInt() + entry_start))
-            #print ("m_attr",mat_attr)
-            for t in range(n_tex):
+            print ("image cnt",image_cnt)
+            for t in range(n_tex_grp):
+
                 bs.seek(tex_offs[t])  # jump to texture header
-                tex_start = bs.tell()
-                bs.seek(0x20,NOESEEK_REL)
-                ddsWidth = bs.readUInt()
-                ddsHeight = bs.readUInt()
-                format = (bs.read(4)).decode('utf-8')
-                mip_cnt = bs.readUInt()
-                pitch = bs.readUInt()
-                print(ddsWidth,ddsHeight,format,mip_cnt,pitch)
-                bs.seek(0x1c,NOESEEK_REL)
-                imgDataOffs = struct.unpack("I"*mip_cnt, bs.read(mip_cnt*4))
-                unknown = bs.readUInt()
-                pos = bs.tell()
-                bs.seek(imgDataOffs[0] + tex_start)  # only load first mipmap, highest resolution
-                ddsSize = imgDataOffs[1] - imgDataOffs[0]
-                texName = "Tex_" + str(tex_no)  
+                for s in range(image_cnt[t]):  # Texture can have more than one image
+                    tex_start = bs.tell()
+                    bs.seek(0x20,NOESEEK_REL)
+                    ddsWidth = bs.readUInt()
+                    ddsHeight = bs.readUInt()
+                    formatBytes = bs.read(4)
+                    if formatBytes[2] != 0:
+                        format = formatBytes.decode('utf-8')
+                    else:
+                        format = hex(formatBytes[0]) # not a DXT string
+                    mip_cnt = bs.readUInt()
+                    ddsSize = bs.readUInt()
+
+                    bs.seek(0x1c,NOESEEK_REL)
+                    imgDataOffs = struct.unpack("I"*7, bs.read(4*7))
+                    unknown = bs.readUInt()
+                    pos = bs.tell()
+                    bs.seek(imgDataOffs[0] + tex_start)  # only load first mipmap, highest resolution
+
+                    texName = "Tex_" + str(tex_no) + "_"  + str(s)  # image_index_subindex
+                    print(texName,ddsWidth,ddsHeight,format,mip_cnt,hex(ddsSize),noesis.FOURCC_BC7)                                        
+                    ddsData = bs.readBytes(ddsSize)                  
+                    dxt = noesis.NOESISTEX_RGBA32   # if it is not DXT , last guess would be a raw uncompress image
+                    if format == 'DXT1':
+                        dxt =  noesis.NOESISTEX_DXT1
+                    elif format == 'DXT3':
+                        dxt =  noesis.NOESISTEX_DXT3
+                    elif format == 'DXT5':
+                        dxt =  noesis.NOESISTEX_DXT5
+                    else:                        
+                        print ("unknown DXT format!!!")    
+                    #if format != "0x15":
+                    #    imgData = rapi.imageDecodeDXT(ddsData, ddsWidth, ddsHeight,dxt)
+                    #else:
+                    #    imgData = ddsData
+                    #imgFmt = noesis.NOESISTEX_RGBA32
+                    texList.append(NoeTexture(texName, ddsWidth, ddsHeight, ddsData, dxt))
+                    bs.seek(pos) 
                 tex_no += 1               
-                
-                ddsData = bs.readBytes(ddsSize)  
-                if format == 'DXT1':
-                    dxt =  noesis.NOESISTEX_DXT1
-                elif format == 'DXT3':
-                    dxt =  noesis.NOESISTEX_DXT3
-                elif format == 'DXT5':
-                    dxt =  noesis.NOESISTEX_DXT5
-                else:
-                    print ("unsupport DXT format!!!")    
-                ddsData = rapi.imageDecodeDXT(ddsData, ddsWidth, ddsHeight,dxt)
-                ddsFmt = noesis.NOESISTEX_RGBA32
-                texList.append(NoeTexture(texName, ddsWidth, ddsHeight, ddsData, ddsFmt))
-                bs.seek(pos) 
     return 1
 
 
@@ -112,7 +124,7 @@ def LoadModel(data, mdlList):
     matList=[]
     LoadTexture(data,texList)
     gb_start = len(texList)
-
+    
     # get global texture
     filepath = rapi.getInputName()
     basename  = os.path.splitext(os.path.basename(filepath))[0]
@@ -122,74 +134,106 @@ def LoadModel(data, mdlList):
     if os.path.exists(gb_tex_fn): 
         with open(gb_tex_fn,"rb") as file:    
             LoadTexture(file.read(), texList, gb_start)
-            
 
+    # prcoess all mesh chunk
     bs = NoeBitStream(data)
+
+
+    n_chunk = bs.readUInt()
+    offs = struct.unpack("I"*n_chunk, bs.read(n_chunk*4))
+
+
     ctx = rapi.rpgCreateContext()
 
-    result = [(i) for i in findall(b'\x00\x30\x12\x04\x00\x00', data)]
-    i = 0
-    for x in result:
-        bs.seek(x - 74)
-        mat1 = struct.unpack("HH",bs.read(4))
-        mat2 = bs.readUInt()
-        tex_id = mat1[0] - 1
-        if mat1[1] != 0:
-            tex_id += gb_start
-        texName = "Tex_"+str(tex_id)
-        matName = "Mat_" + str( i)
-        mat=NoeMaterial(matName,texName)
-        mat.setBlendMode(1,6)
-        matList.append(mat) # create unique material for each mesh
-        rapi.rpgSetMaterial(matName)
+    for i in range(n_chunk):   # looking for texture chunk
+        bs.seek(offs[i])
+        chunk_start = bs.tell()
+        magic=bs.readUShort()
+        magic2=bs.readUShort()
+        bs.seek(chunk_start)
+        if magic ==  magic2:  # texture chunk  , num tex == num palette
+            pass
+        elif (magic == 0x7000 and magic2 == -0x0FC0)   or (magic == 0x0001 and magic2==0xFC03):  # shadow mesh or world mesh            
+            LoadMesh(bs,texList, matList, gb_start)
 
-
-        bs.seek(x+34)
-        material_id= bs.readUInt()
-        bs.seek(36,NOESEEK_REL)
-        fnum = bs.readUInt()
-        vnum = bs.readUInt()
-        bs.seek(64, 1)
-        unk1 = bs.readUInt()
-        unk2 = bs.readUInt()
-        print ("mat id", hex(mat1[0]),hex(mat1[1]), hex(mat2), material_id, unk1, unk2, fnum)
-        bs.seek(16,NOESEEK_REL)
-        fbuf = bs.read(fnum * 2)
-        vbuf = bs.read(vnum * 24)
-        rapi.rpgBindPositionBuffer(vbuf, noesis.RPGEODATA_FLOAT, 24)
-
-        vbuf_format = 'fffBBBBff'
-        vbuf_size = struct.calcsize(vbuf_format)
-        r_offset = struct.calcsize('fff')
-        b_offset = r_offset + struct.calcsize('BB')
-        vbuf_array = bytearray(vbuf)
-        for j in range(0, len(vbuf_array), vbuf_size):
-            vbuf_array[j + r_offset], vbuf_array[j + b_offset] = vbuf_array[j + b_offset], vbuf_array[j + r_offset]
-        vbuf = bytes(vbuf_array)
-
-        # flip mesh along y-axis (vertial direction)
-        rapi.rpgSetTransform(NoeMat43((NoeVec3((-1, 0, 0)), NoeVec3((0, -1, 0)), NoeVec3((0, 0, 1)), NoeVec3((0, 0, 0)))))   
-        rapi.rpgBindColorBufferOfs(vbuf, noesis.RPGEODATA_UBYTE, 24, 12, 4)
-        rapi.rpgBindUV1BufferOfs(vbuf, noesis.RPGEODATA_FLOAT, 24, 16)
-
-        if True:
-            rapi.rpgSetName('mesh{}'.format(i))        
-            rapi.rpgCommitTriangles(fbuf, noesis.RPGEODATA_USHORT, fnum, noesis.RPGEO_TRIANGLE_STRIP)
-        else:
-            for j in range(400):
-                rapi.rpgSetTransform(NoeMat43((NoeVec3((-1, 0, 0)), NoeVec3((0, -1, 0)), NoeVec3((0, 0, 1)), NoeVec3((0, 0, 0)))))   
-                
-                rapi.rpgBindColorBufferOfs(vbuf, noesis.RPGEODATA_UBYTE, 24, 12, 4)
-                rapi.rpgBindUV1BufferOfs(vbuf, noesis.RPGEODATA_FLOAT, 24, 16)
-                rapi.rpgSetName('mesh{}'.format(j+3))
-                rapi.rpgCommitTriangles(fbuf[:(3+j)*2], noesis.RPGEODATA_USHORT, 3+j, noesis.RPGEO_TRIANGLE_STRIP)
-        
-        i += 1
     mdl = rapi.rpgConstructModel()
     mdl.setModelMaterials(NoeModelMaterials(texList, matList))
-    mdlList.append(mdl)
+    mdlList.append(mdl)        
+
     return 1
 
+def LoadMesh(bs,texList,matList, gb_start):
+    #result = [(i) for i in findall(b'\x00\x30\x12\x04\x00\x00', data)]
+    chunk_start = bs.tell()
+    bs.readUInt()  # magic,magic2
+    mesh_cnt = bs.readUInt()
+    mesh_offs = struct.unpack("I"*mesh_cnt, bs.read(4* mesh_cnt))
+    mat_next_id = len(matList)
+
+    for i in range(mesh_cnt):
+        if mesh_offs[i] != 0:
+            bs.seek(chunk_start + mesh_offs[i])
+            mesh_start = bs.tell()
+            submesh_cnt = bs.readUInt()
+            sm_offs = struct.unpack("I"*submesh_cnt, bs.read(4*submesh_cnt))
+            for m in range(submesh_cnt):
+                bs.seek(mesh_start + sm_offs[m])
+                mesh_size  = bs.readUInt()
+                bs.seek(8 , NOESEEK_REL)
+                mat1 = struct.unpack("HH",bs.read(4))
+                texinfo = struct.unpack("HH",bs.read(4))
+                tex_id = mat1[0] - 1
+                if mat1[1] != 0:   # tex id is a global texture
+                    tex_id += gb_start 
+                subIdx = texinfo[1]
+                texName = "Tex_" + str(tex_id) + "_" +str(subIdx)
+                matName = "Mat_" + str(mat_next_id)
+                mat_next_id += 1                
+                mat=NoeMaterial(matName,texName)
+                mat.setBlendMode(1,6)
+                matList.append(mat) # create unique material for each mesh
+                rapi.rpgSetMaterial(matName)
+
+                bs.seek(0x8C,NOESEEK_REL)
+                fnum = bs.readUInt()
+                vnum = bs.readUInt()
+                bs.seek(64, 1)
+                unk1 = bs.readUInt()
+                unk2 = bs.readUInt()
+                print ("mat id",hex(mat1[0]),hex(mat1[1]), hex(texinfo[0]), hex(texinfo[1]), unk1, unk2, fnum)
+                bs.seek(16,NOESEEK_REL)
+                fbuf = bs.read(fnum * 2)
+                vbuf = bs.read(vnum * 24)
+                rapi.rpgBindPositionBuffer(vbuf, noesis.RPGEODATA_FLOAT, 24)
+
+                vbuf_format = 'fffBBBBff'
+                vbuf_size = struct.calcsize(vbuf_format)
+                r_offset = struct.calcsize('fff')
+                b_offset = r_offset + struct.calcsize('BB')
+                vbuf_array = bytearray(vbuf)
+                for j in range(0, len(vbuf_array), vbuf_size):
+                    vbuf_array[j + r_offset], vbuf_array[j + b_offset] = vbuf_array[j + b_offset], vbuf_array[j + r_offset]
+                vbuf = bytes(vbuf_array)
+
+                # flip mesh along y-axis (vertial direction)
+                rapi.rpgSetTransform(NoeMat43((NoeVec3((-1, 0, 0)), NoeVec3((0, -1, 0)), NoeVec3((0, 0, 1)), NoeVec3((0, 0, 0)))))   
+                rapi.rpgBindColorBufferOfs(vbuf, noesis.RPGEODATA_UBYTE, 24, 12, 4)
+                rapi.rpgBindUV1BufferOfs(vbuf, noesis.RPGEODATA_FLOAT, 24, 16)
+
+                if True:
+                    offs_str = '{0:#010x}'.format(mesh_start)
+                    mesh_name = "mesh_" + offs_str + '_' + str(m)                
+                    rapi.rpgSetName(mesh_name)        
+                    rapi.rpgCommitTriangles(fbuf, noesis.RPGEODATA_USHORT, fnum, noesis.RPGEO_TRIANGLE_STRIP)
+                else:
+                    for j in range(400):
+                        rapi.rpgSetTransform(NoeMat43((NoeVec3((-1, 0, 0)), NoeVec3((0, -1, 0)), NoeVec3((0, 0, 1)), NoeVec3((0, 0, 0)))))   
+                        
+                        rapi.rpgBindColorBufferOfs(vbuf, noesis.RPGEODATA_UBYTE, 24, 12, 4)
+                        rapi.rpgBindUV1BufferOfs(vbuf, noesis.RPGEODATA_FLOAT, 24, 16)
+                        rapi.rpgSetName('mesh{}'.format(j+3))
+                        rapi.rpgCommitTriangles(fbuf[:(3+j)*2], noesis.RPGEODATA_USHORT, 3+j, noesis.RPGEO_TRIANGLE_STRIP)
+                rapi.rpgClearBufferBinds() 
 
 def findall(p, s):
     i = s.find(p)
