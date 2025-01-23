@@ -1,4 +1,4 @@
-#Noesis : SH4 PC/Win map bin file loader plugin script
+# Noesis : SH4 PC/Win map bin file loader plugin script
  
 # Authors:
 
@@ -17,7 +17,7 @@
  https://github.com/HunterStanton/sh4bin
  https://github.com/HunterStanton/sh4texturetool
 
- #Known issue: 
+ # Known issue: 
     Does not support some SH4 PC map bin files.
     Some mesh faces show up flipped. turn off Noesis backface culling to see all faces
          
