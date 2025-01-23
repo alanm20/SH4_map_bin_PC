@@ -23,7 +23,10 @@
  
  https://github.com/HunterStanton/sh4texturetool
 
- # Known issue: 
-    Does not support some SH4 PC map bin files.
-    Some mesh faces show up flipped. turn off Noesis backface culling to see all faces
+# Known issue: 
+Does not support some SH4 PC map bin files.
+    
+Some mesh faces show up flipped. turn off Noesis backface culling to see all faces
+    
+Surface that has shadow texture overlay does not blend with the background. Don;t know how to fix it.
          
