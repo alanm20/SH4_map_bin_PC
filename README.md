@@ -18,7 +18,9 @@
  Durik256 - https://forum.xentax.com/viewtopic.php?t=26090
 
  HunterStanton - SH4 bin file and texture format research 
+ 
  https://github.com/HunterStanton/sh4bin
+ 
  https://github.com/HunterStanton/sh4texturetool
 
  # Known issue: 
