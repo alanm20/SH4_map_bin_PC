@@ -1,6 +1,7 @@
 # Noesis : Silent Hill 4 PC/Win map bin file viewer plugin
  
 # Credits:
+ Special thanks to Laurynas Zubavičius (Sparagas) for sharing SH4 data file info and testing this script
 
  Original Noesis map loader script from:
  
