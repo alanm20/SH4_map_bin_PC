@@ -126,7 +126,7 @@ def LoadTexture(data, texList, tex_chunkList):
                     bs.seek(pos)       
     return 1
 
-def mark_valid_texture(data, tex_chunkList, meshTexMap): 
+def match_texture_and_map(data, tex_chunkList, meshTexMap): 
 
 
     bs = NoeBitStream(data)
@@ -148,6 +148,8 @@ def mark_valid_texture(data, tex_chunkList, meshTexMap):
         elif magic == 0x0003:
                 meshList.append(i)  # texture to be ignored
     n_mesh = len(meshList)
+    # assign one texture to each mesh start from the last texture chunk and mesh chunk. if there are more textures than meshes, the first mesh get all the remaining textures at the front of bin file.
+    # this is just a workarund, until I figure for real how SH4 connect mesh to texture. 
     m_cid = -1  # mesh chunk id
     t_cid = -1  # texture chunk id
     for i in range(n_mesh):
@@ -174,7 +176,7 @@ def LoadModel(data, mdlList):
     LoadTexture(data,texList, tex_chunkList)
 
     # mark texture of supported mesh
-    if mark_valid_texture(data, tex_chunkList, meshTexMap):
+    if match_texture_and_map(data, tex_chunkList, meshTexMap):
         need_gb_tex = True
     else:   
         need_gb_tex = False
