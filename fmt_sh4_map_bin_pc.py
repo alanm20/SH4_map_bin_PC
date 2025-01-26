@@ -47,13 +47,14 @@ def CheckType(data):
         if len(data) < block[i]:
             return 0
     for i in range(num_block):
-        bs.seek(block[i])
-        magic = bs.read("2H")
-        if magic[0] == 0x0001 and magic[1]==0xFC03:
-            return 1
+        if len(data) > block[i]+10:
+            bs.seek(block[i])
+            magic = bs.read("2H")
+            if magic[0] != 0 and ((magic[0] == 0x0001 and magic[1]==0xFC03) or magic[0]==magic[1]) :
+                return 1
     return 0
 
-def LoadTexture(data, texList, tex_chunkList, tex_no = 0):
+def LoadTexture(data, texList, tex_chunkList):
     bs = NoeBitStream(data)
     n_chunk = bs.readUInt()
     offs = struct.unpack("I"*n_chunk, bs.read(n_chunk*4))
@@ -63,17 +64,14 @@ def LoadTexture(data, texList, tex_chunkList, tex_no = 0):
         magic=bs.readUShort()
         magic2=bs.readUShort()
         
-        if magic == magic2: 
+        if magic !=0 and magic == magic2: 
+            
             chunk_id = i
-            if tex_chunkList != None:    # need to check if texture is from a supported mesh type
-                if cur_mesh < len (tex_chunkList) and tex_chunkList[cur_mesh] >= 0:  # this texture is paired to a supported mesh
-                    tex_chunkList[cur_mesh] = chunk_id  # save the chunk number of texture for look up
-                    cur_mesh += 1 
-                else:                                
-                    cur_mesh += 1
-                    continue
+            if tex_chunkList == None:
+                chunk_id = 255   # speial chunk id for global textures
             else:
-                chunk_id = 255  # speial chunk id for global textures
+                tex_chunkList.append(i)
+
             bs.seek(0xc,NOESEEK_REL)
             total_tex = magic + magic2
             n_tex_grp = magic
@@ -125,15 +123,17 @@ def LoadTexture(data, texList, tex_chunkList, tex_no = 0):
                         print ("unknown DXT format!!!")    
 
                     texList.append(NoeTexture(texName, ddsWidth, ddsHeight, ddsData, dxt))
-                    bs.seek(pos) 
-                tex_no += 1               
+                    bs.seek(pos)       
     return 1
 
-def mark_valid_texture(data, tex_chunkList): 
+def mark_valid_texture(data, tex_chunkList, meshTexMap): 
+
+
     bs = NoeBitStream(data)
     n_chunk = bs.readUInt()
     offs = struct.unpack("I"*n_chunk, bs.read(n_chunk*4))
     found_mesh = False
+    meshList = []
     for i in range(n_chunk):   # looking for texture chunk
         bs.seek(offs[i])
         chunk_start = bs.tell()
@@ -143,10 +143,22 @@ def mark_valid_texture(data, tex_chunkList):
         if magic ==  magic2:  # texture chunk  , num tex == num palette
             pass
         elif (magic == 0x0001 and magic2==0xFC03):  # world mesh,   (magic == 0x7000 and magic2 == 0x0FC0) or            
-                tex_chunkList.append(0)  #  texture to be loaded
+                meshList.append(i)  #  texture to be loaded
                 found_mesh = True
         elif magic == 0x0003:
-                tex_chunkList.append(-1)  # texture to be ignored
+                meshList.append(i)  # texture to be ignored
+    n_mesh = len(meshList)
+    m_cid = -1  # mesh chunk id
+    t_cid = -1  # texture chunk id
+    for i in range(n_mesh):
+        m_cid = meshList.pop()
+        if len(tex_chunkList) > 0:  # there are case that serval mesh share same texture
+            t_cid = tex_chunkList.pop()
+        meshTexMap[m_cid]=[t_cid]
+    if n_mesh > 0 and len(tex_chunkList)> 0:
+        meshTexMap[m_cid]= tex_chunkList + meshTexMap[m_cid]
+    print ("meshTexMap",meshTexMap)
+        
     return found_mesh
 
 def LoadModel(data, mdlList):
@@ -155,14 +167,18 @@ def LoadModel(data, mdlList):
     global bones
     bones = []
     tex_chunkList = []
-    # mark texture of supported mesh
-    if mark_valid_texture(data, tex_chunkList):
-        need_gb_tex = True
-    else:   
-        need_gb_tex = False
+    meshTexMap = {}
+    matNameSet = set()
 
     # load texture of supported mesh type
     LoadTexture(data,texList, tex_chunkList)
+
+    # mark texture of supported mesh
+    if mark_valid_texture(data, tex_chunkList, meshTexMap):
+        need_gb_tex = True
+    else:   
+        need_gb_tex = False
+ 
     print ("tex_chunkList",tex_chunkList)
 
     gb_start = len(texList)
@@ -176,7 +192,7 @@ def LoadModel(data, mdlList):
         gb_tex_fn = os.path.join(dir, area_name +"gb.bin")    
         if os.path.exists(gb_tex_fn): 
             with open(gb_tex_fn,"rb") as file:   
-                LoadTexture(file.read(), texList, None, gb_start)
+                LoadTexture(file.read(), texList, None)
     
     # prcoess all mesh chunk
     bs = NoeBitStream(data)
@@ -195,11 +211,11 @@ def LoadModel(data, mdlList):
         if magic ==  magic2:  # texture chunk  , num tex == num palette
             pass
         elif (magic == 0x0001 and magic2==0xFC03):  # world mesh,   (magic == 0x7000 and magic2 == 0x0FC0) or            
-            LoadMesh(bs,texList, matList, gb_start, tex_chunkList[cur_mesh])
+            LoadMesh(bs,texList, matList, gb_start, i, meshTexMap,matNameSet)
             cur_mesh += 1
         elif magic == 0x0003: # and magic2 == 0xffff:
             cur_mesh += 1
-            #readMesh(bs)
+            #readMesh(bs) # TODO
             
     try:
         mdl = rapi.rpgConstructModel()
@@ -210,14 +226,13 @@ def LoadModel(data, mdlList):
     mdlList.append(mdl)   
     return 1
 
-def LoadMesh(bs,texList,matList, gb_start, tex_chunk_id):
+def LoadMesh(bs,texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
     
     found_mesh = False
     chunk_start = bs.tell()
     bs.readUInt()  # magic,magic2
     mesh_cnt = bs.readUInt()
     mesh_offs = struct.unpack("I"*mesh_cnt, bs.read(4* mesh_cnt))
-    mat_next_id = len(matList)
 
     for i in range(mesh_cnt):
         if mesh_offs[i] != 0:
@@ -233,17 +248,24 @@ def LoadMesh(bs,texList,matList, gb_start, tex_chunk_id):
                 mat1 = struct.unpack("HH",bs.read(4))
                 texinfo = struct.unpack("HH",bs.read(4))
                 tex_id = mat1[0] - 1
+                tex_chunk = -1
                 if mat1[1] != 0:   # using global texture
-                    tex_chunk = 255   # special chunk id for global texture
+                    if len(meshTexMap[chunk_id]) > 1:
+                        tex_chunk = meshTexMap[chunk_id][1]
+                    else:    
+                        tex_chunk = 255   # special chunk id for global texture
                 else:
-                    tex_chunk = tex_chunk_id  
+                    if chunk_id in meshTexMap:
+                        tex_chunk = meshTexMap[chunk_id][0]
                 subIdx = texinfo[1]
                 texName = "Tex_" + str(tex_chunk) + '_' + str(tex_id) + "_" +str(subIdx)
-                matName = "Mat_" + str(mat_next_id)
-                mat_next_id += 1                
-                mat=NoeMaterial(matName,texName)
-                mat.setBlendMode(1,6)
-                matList.append(mat) # create unique material for each mesh
+                matName = "Mat_" + str(tex_chunk) + '_' + str(tex_id) + "_" +str(subIdx) 
+             
+                if matName not in matNameSet:
+                    mat=NoeMaterial(matName,texName)
+                    mat.setBlendMode(1,6)
+                    matList.append(mat) 
+                    matNameSet.add(matName)
                 rapi.rpgSetMaterial(matName)
 
                 bs.seek(0x0C,NOESEEK_REL)
