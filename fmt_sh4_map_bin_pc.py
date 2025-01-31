@@ -159,7 +159,16 @@ def match_texture_and_map(data, tex_chunkList, meshTexMap):
         meshTexMap[m_cid]=[t_cid]
     if n_mesh > 0 and len(tex_chunkList)> 0:
         meshTexMap[m_cid]= tex_chunkList + meshTexMap[m_cid]
-        
+    
+    # meaning of meshTexMap hash map:  stores list of texture chunks for mesh
+    #   Chunk_id is the index number of a chunk in the bin file, starting from 0, increment for next chunk
+    #   meshTexMap (hash map) : { mesh_chunk_id_1 : [ tex_chunk_id1, id2, ...],  mesh_chunk_id_2: [tex_chunk_id_1, id2, ..], mesh3:[...], ... }
+    #   
+    #   i.e. meshTexMap {0: [1,4], 5: [7], 6: [7]}    
+    #       mesh_id 0 use texture id 1 and 4 (order important), when global tex flag is set, texture_id 4 will be use, otherwise texture 1.
+    #       mesh_id 5 use texture 7, when global tex flag is set, global texture 255 (handle during render) will be use.
+    #       mesh_id 6 also use texture 7. global tex flag works the same as mesh_id 5.
+
     print ("meshTexMap",meshTexMap)
     filepath = os.path.basename(rapi.getInputName())
     basename  = os.path.splitext(os.path.basename(filepath))[0]
@@ -197,6 +206,8 @@ def LoadModel(data, mdlList):
 
     gb_start = len(texList)
     
+    filepath = rapi.getInputName()
+    basename  = os.path.splitext(os.path.basename(filepath))[0]
     # get global texture
     if need_gb_tex:
         filepath = rapi.getInputName()
@@ -215,7 +226,6 @@ def LoadModel(data, mdlList):
     offs = struct.unpack("I"*n_chunk, bs.read(n_chunk*4))
 
     ctx = rapi.rpgCreateContext()
-    cur_mesh = 0
     for i in range(n_chunk):   # looking for texture chunk
         bs.seek(offs[i])
         chunk_start = bs.tell()
@@ -225,10 +235,9 @@ def LoadModel(data, mdlList):
         if magic ==  magic2:  # texture chunk  , num tex == num palette
             pass
         elif (magic == 0x0001 and magic2==0xFC03):  # world mesh,   (magic == 0x7000 and magic2 == 0x0FC0) or            
-            LoadMesh(bs,texList, matList, gb_start, i, meshTexMap,matNameSet)
-            cur_mesh += 1
-        elif magic == 0x0003: # and magic2 == 0xffff:
-            cur_mesh += 1
+            LoadMesh(bs, basename, texList, matList, gb_start, i, meshTexMap,matNameSet)
+        elif magic == 0x0003: # and magic2 == 0xffff:            
+            pass
             #readMesh(bs) # TODO
             
     try:
@@ -240,7 +249,7 @@ def LoadModel(data, mdlList):
     mdlList.append(mdl)   
     return 1
 
-def LoadMesh(bs,texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
+def LoadMesh(bs, basename, texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
     
     found_mesh = False
     chunk_start = bs.tell()
@@ -248,10 +257,13 @@ def LoadMesh(bs,texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
     mesh_cnt = bs.readUInt()
     mesh_offs = struct.unpack("I"*mesh_cnt, bs.read(4* mesh_cnt))
 
-    for i in range(mesh_cnt):
-        if mesh_offs[i] != 0:
+    # Info from HunterStanton Blender plugin : https://github.com/HunterStanton/sh4worldmeshimport/blob/main/plugin.py
+    # mesh_group  # 0 - normal mesh ,1- overdraw mesh, 2 - transparent
+
+    for mesh_group in range(3):
+        if mesh_offs[mesh_group] != 0:
             found_mesh = True
-            bs.seek(chunk_start + mesh_offs[i])
+            bs.seek(chunk_start + mesh_offs[mesh_group])
             mesh_start = bs.tell()
             submesh_cnt = bs.readUInt()
             sm_offs = struct.unpack("I"*submesh_cnt, bs.read(4*submesh_cnt))
@@ -259,12 +271,12 @@ def LoadMesh(bs,texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
                 bs.seek(mesh_start + sm_offs[m])
                 mesh_size  = bs.readUInt()
                 bs.seek(8 , NOESEEK_REL)
-                mat1 = struct.unpack("HH",bs.read(4))
-                texinfo = struct.unpack("HH",bs.read(4))
+                mat1 = struct.unpack("HH",bs.read(4))  # mat1[ tex_id, global_or_second_tex_used]
+                texinfo = struct.unpack("HH",bs.read(4))  # textinfo[ tex_id?,  sub_tex_idx]
                 tex_id = mat1[0] - 1
                 tex_chunk = -1
                 if mat1[1] != 0:   # using global texture
-                    if len(meshTexMap[chunk_id]) > 1:
+                    if len(meshTexMap[chunk_id]) > 1:    #  mesh have second tex chunk, use that instead
                         tex_chunk = meshTexMap[chunk_id][1]
                     else:    
                         tex_chunk = 255   # special chunk id for global texture
@@ -275,11 +287,26 @@ def LoadMesh(bs,texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
                 texName = "Tex_" + str(tex_chunk) + '_' + str(tex_id) + "_" +str(subIdx)
                 matName = "Mat_" + str(tex_chunk) + '_' + str(tex_id) + "_" +str(subIdx) 
              
-                if matName not in matNameSet:
+                # map rl00e requires patch of the texture blending to be visible. 
+                if basename == 'rl00e':
+                    matName = "Mat_" + '{0:#010x}'.format(chunk_start)+ '_' + str(tex_chunk) + '_' + str(tex_id) + "_" +str(subIdx) 
+                    mat=NoeMaterial(matName,texName)
+                    #mat.setBlendMode(1,6)
+                    #print ("patching rl00e blending")
+                    if mesh_group == 0: # disable transparency for normal mesh group, room interier                 
+                        mat.setDefaultBlend(0)
+                        #print ("blending off")
+                    elif mesh_group > 0: # make overdraw (window reflection) less transparent , more visible
+                        mat.setAlphaTest(0.01)
+                        #print ("AlpthaTestOff")
+                elif matName not in matNameSet:
                     mat=NoeMaterial(matName,texName)
                     mat.setBlendMode(1,6)
+
+                if matName not in matNameSet:
                     matList.append(mat) 
-                    matNameSet.add(matName)
+                    matNameSet.add(matName)    
+
                 rapi.rpgSetMaterial(matName)
 
                 bs.seek(0x0C,NOESEEK_REL)
@@ -314,7 +341,7 @@ def LoadMesh(bs,texList,matList, gb_start, chunk_id, meshTexMap,matNameSet):
 
 
                 offs_str = '{0:#010x}'.format(chunk_start)
-                mesh_name = "mesh_" + offs_str + '_' + str(i) + '_' + str(m)         
+                mesh_name = "mesh_" + offs_str + '_' + str(mesh_group) + '_' + str(m)         
                 print (mesh_name,", mat id", texName, hex(mat1[0]),hex(mat1[1]), hex(texinfo[0]), hex(texinfo[1]), unk1, unk2, fnum)   
                 #print (bmin,pmin,bmax,pmax)
                 rapi.rpgSetName(mesh_name)        
