@@ -18,7 +18,9 @@
  Search idea:
  Durik256 - https://forum.xentax.com/viewtopic.php?t=26090
 
- HunterStanton - SH4 bin file and texture format research 
+ HunterStanton - SH4 bin file and mesh/texture format research 
+
+ https://github.com/HunterStanton/sh4worldmeshimport
  
  https://github.com/HunterStanton/sh4bin
  
