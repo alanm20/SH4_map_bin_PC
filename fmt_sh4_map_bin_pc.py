@@ -159,8 +159,20 @@ def match_texture_and_map(data, tex_chunkList, meshTexMap):
         meshTexMap[m_cid]=[t_cid]
     if n_mesh > 0 and len(tex_chunkList)> 0:
         meshTexMap[m_cid]= tex_chunkList + meshTexMap[m_cid]
-    print ("meshTexMap",meshTexMap)
         
+    print ("meshTexMap",meshTexMap)
+    filepath = os.path.basename(rapi.getInputName())
+    basename  = os.path.splitext(os.path.basename(filepath))[0]
+    print ("basename",basename)
+    # patching for specific map
+    if basename == "hs01":
+          meshTexMap[5]=meshTexMap[6]
+          print ("patched meshTexMap",meshTexMap)
+    elif basename == "mz38":
+          meshTexMap[0]=[2]
+          meshTexMap[1]=[2]
+          print ("patched meshTexMap",meshTexMap)
+
     return found_mesh
 
 def LoadModel(data, mdlList):
