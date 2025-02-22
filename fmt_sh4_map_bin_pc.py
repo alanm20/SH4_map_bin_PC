@@ -264,7 +264,7 @@ def LoadMesh(bs, basename, texList,matList, gb_start, chunk_id, meshTexMap,matNa
     # Info from HunterStanton Blender plugin : https://github.com/HunterStanton/sh4worldmeshimport/blob/main/plugin.py
     # mesh_group  # 0 - normal mesh ,1- overdraw mesh, 2 - transparent
 
-    for mesh_group in range(3):
+    for mesh_group in range(mesh_cnt):
         if mesh_offs[mesh_group] != 0:
             found_mesh = True
             bs.seek(chunk_start + mesh_offs[mesh_group])
